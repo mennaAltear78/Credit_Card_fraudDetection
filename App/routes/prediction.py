@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from App.schemas.prediction_schema import FraudPredictionInput
+from app.schemas.prediction_schema import FraudPredictionInput
 from scripts.prediction import predict
 
 router = APIRouter()
