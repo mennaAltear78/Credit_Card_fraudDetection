@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Dataset
+ml/creditcard.csv
+
+# Model files
+*.pkl
+*.joblib
+
+# Environment
+.venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+Backend/logs/
+
+# Model files
+*.pkl
+*.joblib
+
+/ml/
