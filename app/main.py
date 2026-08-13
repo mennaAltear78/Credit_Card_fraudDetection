@@ -10,7 +10,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:5174",
-        # "https://your-frontend.vercel.app",
+       "https://credit-fraud-frontend.vercel.app",
     ],    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
