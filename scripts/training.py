@@ -6,11 +6,11 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 from joblib import dump
+from huggingface_hub import HfApi
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -22,26 +22,38 @@ from sklearn.metrics import (
     classification_report
 )
 
+# إخفاء تحذيرات Windows Symlinks
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 
 def train_model():
     try:
-        # Load environment variables
+        # 1. تحميل متغيرات البيئة
         load_dotenv()
 
-        PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT"))
+        # مسارات البيانات والـ Logs المحلية
+        PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", "."))
+        DATASET_PATH = PROJECT_ROOT / os.getenv("DATASET_NAME", "ml/creditcard.csv")
+        LOG_PATH = PROJECT_ROOT / os.getenv("LOG_DIR", "logs") / os.getenv("LOG_NAME", "app.log")
 
-        DATASET_PATH = PROJECT_ROOT / os.getenv("DATASET_NAME")
-        MODEL_PATH = PROJECT_ROOT / os.getenv("MODEL_DIR") / os.getenv("MODEL_NAME")
-        METRICS_PATH = PROJECT_ROOT / os.getenv("MODEL_DIR") / "metrics.json"
-        LOG_PATH = PROJECT_ROOT / os.getenv("LOG_DIR") / os.getenv("LOG_NAME")
+        # معلمات تدريب الموديل
+        TARGET_COL = os.getenv("TARGET_COL", "Class")
+        TEST_SIZE = float(os.getenv("TEST_SIZE", 0.2))
+        RANDOM_STATE = int(os.getenv("RANDOM_STATE", 42))
 
-        TARGET_COL = os.getenv("TARGET_COL")
-        TEST_SIZE = float(os.getenv("TEST_SIZE"))
-        RANDOM_STATE = int(os.getenv("RANDOM_STATE"))
+        # بيانات Hugging Face لرفع الموديل والـ Metrics
+        REPO_ID = os.getenv("REPO_ID", "manna78/credit_model")
+        HF_TOKEN = os.getenv("HF_TOKEN")  # Write Token الخاص بحسابك
 
-        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # مجلد مؤقت للحفظ المحلي قبل الرفع مباشرة
+        TEMP_DIR = PROJECT_ROOT / "temp_output"
+        TEMP_DIR.mkdir(parents=True, exist_ok=True)
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+        LOCAL_MODEL_PATH = TEMP_DIR / "model.joblib"
+        LOCAL_METRICS_PATH = TEMP_DIR / "metrics.json"
+
+        # إعداد الـ Logging
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -51,16 +63,16 @@ def train_model():
             ]
         )
 
-        logging.info("Training script started")
+        logging.info("🚀 Training script started...")
 
-        # Load dataset
+        # 2. قراءة البيانات محلياً
         df = pd.read_csv(DATASET_PATH)
-        logging.info(f"Dataset loaded with shape {df.shape}")
+        logging.info(f"Dataset loaded successfully from local disk. Shape: {df.shape}")
 
         X = df.drop(columns=[TARGET_COL])
         y = df[TARGET_COL]
 
-        # Split dataset
+        # 3. تقسيم البيانات وإنشاء الـ Pipeline
         X_train, X_test, y_train, y_test = train_test_split(
             X,
             y,
@@ -69,75 +81,89 @@ def train_model():
             stratify=y
         )
 
-        # Create pipeline
         pipeline = Pipeline(
             steps=[
                 (
                     "model",
                     RandomForestClassifier(
-                           n_estimators=200,
-                            min_samples_leaf=1,
-                            max_features="log2",
-                            max_depth=None,
-                            random_state=RANDOM_STATE,
-                            n_jobs=-1,
-                            class_weight="balanced_subsample"
+                        n_estimators=200,
+                        min_samples_leaf=1,
+                        max_features="log2",
+                        max_depth=None,
+                        random_state=RANDOM_STATE,
+                        n_jobs=-1,
+                        class_weight="balanced_subsample"
                     )
                 )
             ]
         )
 
-        # Train model
+        # 4. التدريب والتوقع
         pipeline.fit(X_train, y_train)
-        logging.info("Model training completed")
+        logging.info("Model training completed.")
 
-        # Predictions
         train_pred = pipeline.predict(X_train)
         THRESHOLD = 0.21
 
         test_prob = pipeline.predict_proba(X_test)[:, 1]
         test_pred = (test_prob >= THRESHOLD).astype(int)
 
-        # Accuracy
+        # حساب المقاييس (Metrics)
         train_acc = accuracy_score(y_train, train_pred)
         test_acc = accuracy_score(y_test, test_pred)
 
-        # Classification reports
         train_report = classification_report(y_train, train_pred)
         test_report = classification_report(y_test, test_pred)
 
-        logging.info(f"Train Accuracy: {train_acc:.3f}")
-        logging.info(f"Test Accuracy: {test_acc:.3f}")
-
-        logging.info(f"Train Classification Report:\n{train_report}")
+        logging.info(f"Train Accuracy: {train_acc:.3f} | Test Accuracy: {test_acc:.3f}")
         logging.info(f"Test Classification Report:\n{test_report}")
+
         pr_auc = average_precision_score(y_test, test_prob)
         roc_auc = roc_auc_score(y_test, test_prob)
 
-        logging.info(f"ROC-AUC: {roc_auc:.4f}")
-        logging.info(f"PR-AUC: {pr_auc:.4f}")
-        # Save model statistics
         metrics = {
             "threshold": THRESHOLD,
             "accuracy": round(accuracy_score(y_test, test_pred), 4),
             "precision": round(precision_score(y_test, test_pred), 4),
             "recall": round(recall_score(y_test, test_pred), 4),
             "f1_score": round(f1_score(y_test, test_pred), 4),
-            "roc_auc": round(roc_auc_score(y_test, test_prob), 4),
-            "pr_auc": round(average_precision_score(y_test, test_prob), 4),
+            "roc_auc": round(roc_auc, 4),
+            "pr_auc": round(pr_auc, 4),
             "confusion_matrix": confusion_matrix(y_test, test_pred).tolist()
         }
 
-        with open(METRICS_PATH, "w") as f:
+        # 5. حفظ الموديل والـ Metrics محلياً في ملف مؤقت
+        with open(LOCAL_METRICS_PATH, "w") as f:
             json.dump(metrics, f, indent=4)
 
-        logging.info(f"Metrics saved to {METRICS_PATH}")
+        dump(pipeline, LOCAL_MODEL_PATH)
+        logging.info("Saved model and metrics locally in temp directory.")
 
-        # Save trained model
-        dump(pipeline, MODEL_PATH)
-        logging.info(f"Model saved to {MODEL_PATH}")
+        # -------------------------------------------------------------
+        # 6. رفع الموديل والـ Metrics فقط إلى Hugging Face
+        # -------------------------------------------------------------
+        logging.info(f"Uploading model & metrics to Hugging Face Space ({REPO_ID})...")
+        api = HfApi()
 
-        logging.info("Training script finished successfully.")
+        # رفع ملف الموديل
+        api.upload_file(
+            path_or_fileobj=str(LOCAL_MODEL_PATH),
+            path_in_repo="ml/model_dir/model.joblib",
+            repo_id=REPO_ID,
+            repo_type="space",
+            token=HF_TOKEN
+        )
+
+        # رفع ملف الـ Metrics
+        api.upload_file(
+            path_or_fileobj=str(LOCAL_METRICS_PATH),
+            path_in_repo="ml/model_dir/metrics.json",
+            repo_id=REPO_ID,
+            repo_type="space",
+            token=HF_TOKEN
+        )
+
+        logging.info(f"🎉 Model & Metrics successfully updated on Hugging Face!")
 
     except Exception as e:
         logging.exception(f"Training failed: {e}")
