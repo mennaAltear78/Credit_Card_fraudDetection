@@ -1,4 +1,12 @@
 import os
+
+# Vercel writable directory
+os.environ["HF_HOME"] = "/tmp/huggingface"
+os.environ["HF_HUB_CACHE"] = "/tmp/huggingface/hub"
+os.environ["HF_XET_CACHE"] = "/tmp/huggingface/xet"
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 import json
 import logging
 
@@ -6,9 +14,6 @@ import pandas as pd
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_download
 from joblib import load
-
-# Hide Hugging Face symlink warning on Windows
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 # Load environment variables
 load_dotenv()
@@ -56,6 +61,7 @@ def init_model_and_logging():
             repo_type="space",
             cache_dir="/tmp/huggingface"
         )
+
         model = load(downloaded_model_path)
 
         logging.info("Model loaded successfully into memory.")
@@ -63,7 +69,8 @@ def init_model_and_logging():
         downloaded_metrics_path = hf_hub_download(
             repo_id=REPO_ID,
             filename=METRICS_FILENAME,
-            repo_type="space"
+            repo_type="space",
+            cache_dir="/tmp/huggingface"
         )
 
         with open(downloaded_metrics_path, "r", encoding="utf-8") as f:
