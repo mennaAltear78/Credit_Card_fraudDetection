@@ -53,9 +53,9 @@ def init_model_and_logging():
         downloaded_model_path = hf_hub_download(
             repo_id=REPO_ID,
             filename=MODEL_FILENAME,
-            repo_type="space"
+            repo_type="space",
+            cache_dir="/tmp/huggingface"
         )
-
         model = load(downloaded_model_path)
 
         logging.info("Model loaded successfully into memory.")
