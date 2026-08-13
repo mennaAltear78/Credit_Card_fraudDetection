@@ -12,7 +12,8 @@ app.add_middleware(
         "http://localhost:5174",
     #    "https://credit-fraud-frontend.vercel.app",
 	   "https://credit-fraud-frontend-qzp2.vercel.app"
-	   "https://credit-card-fraud-detection-t7oq.vercel.app"
+	#    "https://credit-card-fraud-detection-t7oq.vercel.app"
+	"https://credit-fraud-frontend-1yq8.vercel.app"
     ],    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
